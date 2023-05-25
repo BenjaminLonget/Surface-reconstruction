@@ -1,5 +1,7 @@
 # Implemented by Zhuoyu Yang, Matsushita Lab., Osaka University, Mar. 30th 2020.
 # Modified at July 20th 2020. Support adding depth prior.
+# Modified spring 2023 for the project in advanced computer vision at SDU.
+
 import cv2
 import argparse
 
@@ -108,9 +110,9 @@ class Normal_Integration(object):
         self.N = self.construct_N()
         self.NA = self.N@self.A
         self.Nb = self.N@self.b
-        if self.solver == 'spsolve':
-            self.NATNA = (self.NA.T@self.NA).tocsc()
-            self.NATNb = self.NA.T@self.Nb
+        #if self.solver == 'spsolve':
+        #    self.NATNA = (self.NA.T@self.NA).tocsc()
+        #    self.NATNb = self.NA.T@self.Nb
         
         if depth_path is not None: # add depth prior
             d_prior = np.load(depth_path)
@@ -177,7 +179,7 @@ class Normal_Integration(object):
         # build A for Ax=b
         A = sparse.coo_matrix((data, (row, col-1)), shape=(4*self.mesh_count, self.v_count))
         # build b for Ax=b
-        b = np.vstack(((x/-2+y/2)/z,(x/2+y/2)/z,(x/-2+y/-2)/z,(x/2+y/-2)/z)).T.reshape(-1, 1)
+        b = np.vstack(((x/-2+y/2)/z, (x/2+y/2)/z, (x/-2+y/-2)/z, (x/2+y/-2)/z)).T.reshape(-1, 1)
 
         return A, b
 
@@ -196,25 +198,43 @@ class Normal_Integration(object):
 
         if ".npy" in path:
             n = np.load(path)
-            mask_bg = (n[...,2] == 0) # get background mask
+            color_to_replace = np.array([128, 128, 128])
+
+            # Create a mask of pixels that match the old color
+            #mask_black = np.all(n == color_to_replace, axis=-1)
+
+            mask_black = (n[...,2] == 0) # get background mask
 
         else:
             n = cv2.imread(path)
 
-            n[...,0], n[...,2] = n[...,2], n[...,0].copy() # Change BGR to RGB
-            mask_bg = (n[...,2] == 0) # get background mask
+            # Define the color you want to replace (in this case, (128, 128, 128))
+            color_to_replace = np.array([128, 128, 128])
+            color_to_replace2 = np.array([0, 0, 0])
+
+            # Create a mask of pixels that match the old color
+            #mask_black = np.all(n == color_to_replace, axis=-1)
+            mask_black = np.all((n == color_to_replace) | (n == color_to_replace2), axis=-1)
+
+            n = cv2.cvtColor(n, cv2.COLOR_BGR2RGB)
+
+            #n[...,0], n[...,2] = n[...,2], n[...,0].copy() # Change BGR to RGB
+            #mask_bg = (n[...,2] == 0) # get background mask
+            #mask_bg = (n[..., 0] == 1) # get background mask
             n = n.astype(np.float32) # uint8 -> float32
 
             # x,y:[0,255]->[-1,1] z:[128,255]->[0,1]
-            n[...,0] = n[...,0]*2/255-1
-            n[...,1] = n[...,1]*2/255-1
-            n[...,2] = (n[...,2]-128)/127
+            n[...,0] = n[...,0]*2/255 - 1
+            n[...,1] = n[...,1]*2/255 - 1
+            #n[..., 2] = n[..., 2] / 255 - 1
+            n[...,2] = (n[...,2]-128) / (255 - 128)
 
             n = normalize(n.reshape(-1,3)).reshape(n.shape)
 
         # fill background with [0,0,0]
-        n[mask_bg] = [0,0,0]
-        return n, ~mask_bg
+        n[mask_black] = [0, 0, 0]
+        #cv2.imwrite('modified_image.png', n)
+        return n, ~mask_black
 
     def construct_N(self):
         N_ = np.eye(4)-0.25
